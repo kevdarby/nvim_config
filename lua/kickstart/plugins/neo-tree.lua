@@ -16,6 +16,7 @@ return {
   opts = {
     filesystem = {
       window = {
+        width = 30, -- Prevent NeoTree from resizing
         mappings = {
           ['\\'] = 'close_window',
         },

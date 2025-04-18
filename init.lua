@@ -89,9 +89,9 @@ P.S. You can delete this when you're done too. It's your config now! :)
 --  NOTE: Must happen before plugins are loaded (otherwise wrong leader will be used)
 vim.g.mapleader = ' '
 vim.g.maplocalleader = ' '
-
+vim.opt.tabstop = 4
 -- Set to true if you have a Nerd Font installed and selected in the terminal
-vim.g.have_nerd_font = false
+vim.g.have_nerd_font = true
 
 -- [[ Setting options ]]
 -- See `:help vim.opt`
@@ -102,7 +102,8 @@ vim.g.have_nerd_font = false
 vim.opt.number = true
 -- You can also add relative line numbers, to help with jumping.
 --  Experiment for yourself to see if you like it!
--- vim.opt.relativenumber = true
+vim.opt.relativenumber = true
+vim.opt.wrap = false
 
 -- Enable mouse mode, can be useful for resizing splits for example!
 vim.opt.mouse = 'a'
@@ -145,7 +146,7 @@ vim.opt.splitbelow = true
 --  See `:help 'list'`
 --  and `:help 'listchars'`
 vim.opt.list = true
-vim.opt.listchars = { tab = '» ', trail = '·', nbsp = '␣' }
+vim.opt.listchars = { tab = '  ', trail = '·', nbsp = '␣' }
 
 -- Preview substitutions live, as you type!
 vim.opt.inccommand = 'split'
@@ -177,7 +178,7 @@ vim.keymap.set('n', '<leader>q', vim.diagnostic.setloclist, { desc = 'Open diagn
 --
 -- NOTE: This won't work in all terminal emulators/tmux/etc. Try your own mapping
 -- or just use <C-\><C-n> to exit terminal mode
-vim.keymap.set('t', '<Esc><Esc>', '<C-\\><C-n>', { desc = 'Exit terminal mode' })
+vim.keymap.set('t', '<Esc>', '<C-\\><C-n>', { desc = 'Exit terminal mode' })
 
 -- TIP: Disable arrow keys in normal mode
 -- vim.keymap.set('n', '<left>', '<cmd>echo "Use h to move!!"<CR>')
@@ -194,6 +195,29 @@ vim.keymap.set('n', '<C-l>', '<C-w><C-l>', { desc = 'Move focus to the right win
 vim.keymap.set('n', '<C-j>', '<C-w><C-j>', { desc = 'Move focus to the lower window' })
 vim.keymap.set('n', '<C-k>', '<C-w><C-k>', { desc = 'Move focus to the upper window' })
 
+vim.api.nvim_set_keymap('n', '<Up>', '', { noremap = true })
+vim.api.nvim_set_keymap('n', '<Down>', '', { noremap = true })
+vim.api.nvim_set_keymap('n', '<Left>', '', { noremap = true })
+vim.api.nvim_set_keymap('n', '<Right>', '', { noremap = true })
+
+vim.keymap.set('n', '<leader><leader>', '<C-^>', { noremap = true, silent = true })
+vim.cmd [[autocmd BufEnter * set formatoptions-=o]]
+
+vim.api.nvim_create_autocmd('BufEnter', {
+  pattern = '*',
+  callback = function()
+    vim.opt.formatoptions:remove { 'o', 'r' }
+  end,
+})
+-- Auto reload buffer when i git checkout
+vim.o.autoread = true
+vim.api.nvim_create_autocmd({ 'BufEnter', 'CursorHold', 'CursorHoldI', 'FocusGained' }, {
+  command = "if mode() != 'c' | checktime | endif",
+  pattern = { '*' },
+})
+-- move highglighted lines up and down
+vim.keymap.set('v', 'J', ":m '>+1<CR>gv=gv")
+vim.keymap.set('v', 'K', ":m '<-2<CR>gv=gv")
 -- [[ Basic Autocommands ]]
 --  See `:help lua-guide-autocommands`
 
@@ -230,11 +254,84 @@ vim.opt.rtp:prepend(lazypath)
 --  To update plugins you can run
 --    :Lazy update
 --
+vim.keymap.set('n', '<leader>y', ':%y+<CR>', { noremap = true, silent = true, desc = 'Copy entire file to clipboard' })
 -- NOTE: Here is where you install your plugins.
+-- vim.api.nvim_create_autocmd('VimEnter', {
+--   callback = function()
+--     vim.cmd 'split | terminal'
+--     vim.cmd 'resize 10' -- Adjust the height of the terminal split
+--   end,
+-- })
+-- vim.keymap.set('n', '<leader>st', function()
+--   vim.cmd 'belowright split' -- Open a new split below
+--   vim.cmd 'resize 8' -- Set terminal height to 5 lines
+--   vim.cmd 'terminal' -- Open terminal
+--   vim.cmd 'startinsert' -- Start in insert mode
+-- end, { noremap = true, silent = true })
+
+vim.keymap.set('n', '<leader>st', function()
+  local term_bufnr = nil
+
+  -- Look for an existing terminal buffer
+  for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.api.nvim_buf_is_loaded(bufnr) and vim.api.nvim_buf_get_option(bufnr, 'buftype') == 'terminal' then
+      term_bufnr = bufnr
+      break
+    end
+  end
+
+  if term_bufnr then
+    -- Check if the terminal is in a window already
+    for _, win in ipairs(vim.api.nvim_list_wins()) do
+      if vim.api.nvim_win_get_buf(win) == term_bufnr then
+        vim.api.nvim_set_current_win(win)
+        vim.cmd 'startinsert'
+        return
+      end
+    end
+    -- If not in any window, open it in a split
+    vim.cmd 'belowright split'
+    vim.api.nvim_win_set_buf(0, term_bufnr)
+    vim.cmd 'resize 8'
+    vim.cmd 'startinsert'
+  else
+    -- If no terminal buffer exists, create one
+    vim.cmd 'belowright split'
+    vim.cmd 'resize 8'
+    vim.cmd 'terminal'
+    vim.cmd 'startinsert'
+  end
+end, { noremap = true, silent = true })
+vim.keymap.set('n', '<leader>rr', function()
+  local ft = vim.bo.filetype
+  local file = vim.fn.expand '%:p'
+  local cmd = ''
+  vim.cmd 'write'
+
+  if ft == 'python' then
+    cmd = 'python3 "' .. file .. '"'
+  elseif ft == 'javascript' then
+    cmd = 'node "' .. file .. '"'
+  elseif ft == 'typescript' then
+    cmd = 'ts-node "' .. file .. '"'
+  elseif ft == 'sh' then
+    cmd = 'bash "' .. file .. '"'
+  elseif ft == 'lua' then
+    cmd = 'lua "' .. file .. '"'
+  elseif ft == 'ocaml' then
+    cmd = 'ocaml "' .. file .. '"'
+  else
+    vim.notify('No run command configured for filetype: ' .. ft, vim.log.levels.WARN)
+    return
+  end
+
+  vim.cmd('Dispatch ' .. cmd)
+end, { desc = 'Run current file using dispatch' })
 require('lazy').setup({
+
   -- NOTE: Plugins can be added with a link (or for a github repo: 'owner/repo' link).
   'tpope/vim-sleuth', -- Detect tabstop and shiftwidth automatically
-
+  'tpope/vim-fugitive',
   -- NOTE: Plugins can also be added by using a table,
   -- with the first argument being the link and the following
   -- keys can be used to configure plugin behavior/loading/etc.
@@ -260,16 +357,31 @@ require('lazy').setup({
   { -- Adds git related signs to the gutter, as well as utilities for managing changes
     'lewis6991/gitsigns.nvim',
     opts = {
-      signs = {
-        add = { text = '+' },
-        change = { text = '~' },
-        delete = { text = '_' },
-        topdelete = { text = '‾' },
-        changedelete = { text = '~' },
-      },
+      -- signs = {
+      --   add = { text = '+' },
+      --   change = { text = '~' },
+      --   delete = { text = '_' },
+      --   topdelete = { text = '‾' },
+      --   changedelete = { text = '~' },
+      -- },
     },
   },
 
+  {
+    'mbbill/undotree',
+    config = function()
+      -- Keybinding to toggle the undo tree window
+      vim.api.nvim_set_keymap('n', '<Leader>u', ':UndotreeToggle<CR>', { noremap = true, silent = true })
+
+      -- Optionally, you can add other configurations here
+      vim.g.undotree_WindowLayout = 3 -- Choose layout style
+      vim.g.undotree_SetFocusWhenToggle = 1 -- Automatically focus the undo tree window
+    end,
+  },
+  {
+    'tpope/vim-dispatch',
+    event = 'VeryLazy',
+  },
   -- NOTE: Plugins can also be configured to run Lua code when they are loaded.
   --
   -- This is often very useful to both group configuration, as well as handle
@@ -283,63 +395,6 @@ require('lazy').setup({
   --
   -- Then, because we use the `opts` key (recommended), the configuration runs
   -- after the plugin has been loaded as `require(MODULE).setup(opts)`.
-
-  { -- Useful plugin to show you pending keybinds.
-    'folke/which-key.nvim',
-    event = 'VimEnter', -- Sets the loading event to 'VimEnter'
-    opts = {
-      -- delay between pressing a key and opening which-key (milliseconds)
-      -- this setting is independent of vim.opt.timeoutlen
-      delay = 0,
-      icons = {
-        -- set icon mappings to true if you have a Nerd Font
-        mappings = vim.g.have_nerd_font,
-        -- If you are using a Nerd Font: set icons.keys to an empty table which will use the
-        -- default which-key.nvim defined Nerd Font icons, otherwise define a string table
-        keys = vim.g.have_nerd_font and {} or {
-          Up = '<Up> ',
-          Down = '<Down> ',
-          Left = '<Left> ',
-          Right = '<Right> ',
-          C = '<C-…> ',
-          M = '<M-…> ',
-          D = '<D-…> ',
-          S = '<S-…> ',
-          CR = '<CR> ',
-          Esc = '<Esc> ',
-          ScrollWheelDown = '<ScrollWheelDown> ',
-          ScrollWheelUp = '<ScrollWheelUp> ',
-          NL = '<NL> ',
-          BS = '<BS> ',
-          Space = '<Space> ',
-          Tab = '<Tab> ',
-          F1 = '<F1>',
-          F2 = '<F2>',
-          F3 = '<F3>',
-          F4 = '<F4>',
-          F5 = '<F5>',
-          F6 = '<F6>',
-          F7 = '<F7>',
-          F8 = '<F8>',
-          F9 = '<F9>',
-          F10 = '<F10>',
-          F11 = '<F11>',
-          F12 = '<F12>',
-        },
-      },
-
-      -- Document existing key chains
-      spec = {
-        { '<leader>c', group = '[C]ode', mode = { 'n', 'x' } },
-        { '<leader>d', group = '[D]ocument' },
-        { '<leader>r', group = '[R]ename' },
-        { '<leader>s', group = '[S]earch' },
-        { '<leader>w', group = '[W]orkspace' },
-        { '<leader>t', group = '[T]oggle' },
-        { '<leader>h', group = 'Git [H]unk', mode = { 'n', 'v' } },
-      },
-    },
-  },
 
   -- NOTE: Plugins can specify dependencies.
   --
@@ -420,14 +475,15 @@ require('lazy').setup({
       vim.keymap.set('n', '<leader>sh', builtin.help_tags, { desc = '[S]earch [H]elp' })
       vim.keymap.set('n', '<leader>sk', builtin.keymaps, { desc = '[S]earch [K]eymaps' })
       vim.keymap.set('n', '<leader>sf', builtin.find_files, { desc = '[S]earch [F]iles' })
-      vim.keymap.set('n', '<leader>ss', builtin.builtin, { desc = '[S]earch [S]elect Telescope' })
+      -- vim.keymap.set('n', '<leader>ss', builtin.builtin, { desc = '[S]earch [S]elect Telescope' })
       vim.keymap.set('n', '<leader>sw', builtin.grep_string, { desc = '[S]earch current [W]ord' })
       vim.keymap.set('n', '<leader>sg', builtin.live_grep, { desc = '[S]earch by [G]rep' })
       vim.keymap.set('n', '<leader>sd', builtin.diagnostics, { desc = '[S]earch [D]iagnostics' })
       vim.keymap.set('n', '<leader>sr', builtin.resume, { desc = '[S]earch [R]esume' })
       vim.keymap.set('n', '<leader>s.', builtin.oldfiles, { desc = '[S]earch Recent Files ("." for repeat)' })
-      vim.keymap.set('n', '<leader><leader>', builtin.buffers, { desc = '[ ] Find existing buffers' })
-
+      vim.keymap.set('n', '<leader>sc', builtin.git_commits, { desc = '[G]it [C]ommits' })
+      vim.keymap.set('n', '<leader>ss', builtin.git_stash, { desc = '[G]it [S]tash' })
+      -- vim.keymap.set('n', '<leader><leader>', builtin.buffers, { desc = '[ ] Find existing buffers' })
       -- Slightly advanced example of overriding default behavior and theme
       vim.keymap.set('n', '<leader>/', function()
         -- You can pass additional configuration to Telescope to change the theme, layout, etc.
@@ -558,7 +614,7 @@ require('lazy').setup({
           -- Execute a code action, usually your cursor needs to be on top of an error
           -- or a suggestion from your LSP for this to activate.
           map('<leader>ca', vim.lsp.buf.code_action, '[C]ode [A]ction', { 'n', 'x' })
-
+          map('<leader>sh', vim.lsp.buf.signature_help, '[S]ignature [H]elp')
           -- WARN: This is not Goto Definition, this is Goto Declaration.
           --  For example, in C this would take you to the header.
           map('gD', vim.lsp.buf.declaration, '[G]oto [D]eclaration')
@@ -827,19 +883,15 @@ require('lazy').setup({
         --
         -- No, but seriously. Please read `:help ins-completion`, it is really good!
         mapping = cmp.mapping.preset.insert {
-          -- Select the [n]ext item
-          ['<C-n>'] = cmp.mapping.select_next_item(),
-          -- Select the [p]revious item
-          ['<C-p>'] = cmp.mapping.select_prev_item(),
+          ['<Tab>'] = cmp.mapping.select_next_item(),
+          -- Select the previous item with Shift+Tab
+          ['<S-Tab>'] = cmp.mapping.select_prev_item(),
 
+          -- Confirm completion with Enter
+          ['<CR>'] = cmp.mapping.confirm { select = true },
           -- Scroll the documentation window [b]ack / [f]orward
           ['<C-b>'] = cmp.mapping.scroll_docs(-4),
           ['<C-f>'] = cmp.mapping.scroll_docs(4),
-
-          -- Accept ([y]es) the completion.
-          --  This will auto-import if your LSP supports it.
-          --  This will expand snippets if the LSP sent a snippet.
-          ['<C-y>'] = cmp.mapping.confirm { select = true },
 
           -- If you prefer more traditional completion keymaps,
           -- you can uncomment the following lines
@@ -850,7 +902,7 @@ require('lazy').setup({
           -- Manually trigger a completion from nvim-cmp.
           --  Generally you don't need this, because nvim-cmp will display
           --  completions whenever it has completion options available.
-          ['<C-Space>'] = cmp.mapping.complete {},
+          ['<C-y>'] = cmp.mapping.complete {},
 
           -- Think of <c-l> as moving to the right of your snippet expansion.
           --  So if you have a snippet that's like:
@@ -986,13 +1038,37 @@ require('lazy').setup({
   --  Here are some example plugins that I've included in the Kickstart repository.
   --  Uncomment any of the lines below to enable them (you will need to restart nvim).
   --
-  -- require 'kickstart.plugins.debug',
+  require 'kickstart.plugins.debug',
   -- require 'kickstart.plugins.indent_line',
   -- require 'kickstart.plugins.lint',
-  -- require 'kickstart.plugins.autopairs',
-  -- require 'kickstart.plugins.neo-tree',
+  require 'kickstart.plugins.autopairs',
+  require 'kickstart.plugins.neo-tree',
   -- require 'kickstart.plugins.gitsigns', -- adds gitsigns recommend keymaps
-
+  {
+    'nvim-neo-tree/neo-tree.nvim',
+    branch = 'v3.x',
+    dependencies = {
+      'nvim-lua/plenary.nvim',
+      'nvim-tree/nvim-web-devicons', -- not strictly required, but recommended
+      'MunifTanjim/nui.nvim',
+      -- {"3rd/image.nvim", opts = {}}, -- Optional image support in preview window
+    },
+    lazy = false, -- Neo-tree will lazily load itself
+    opts = {
+      window = {
+        -- other window settings you might need
+      },
+      filesystem = {
+        auto_refresh = true,
+        follow_current_file = {
+          enabled = true, -- This will find and focus the file in the active buffer every time
+          --               -- the current file is changed while the tree is open.
+          leave_dirs_open = false, -- `false` closes auto expanded dirs, such as with `:Neotree reveal`
+        },
+      },
+      -- Other configuration options...
+    },
+  },
   -- NOTE: The import below can automatically add your own plugins, configuration, etc from `lua/custom/plugins/*.lua`
   --    This is the easiest way to modularize your config.
   --
