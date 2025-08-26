@@ -90,6 +90,8 @@ P.S. You can delete this when you're done too. It's your config now! :)
 vim.g.mapleader = ' '
 vim.g.maplocalleader = ' '
 vim.opt.tabstop = 4
+vim.opt.shiftwidth = 4 -- Number of spaces per indent level
+vim.opt.softtabstop = 4 -- Number of spaces that a tab key feels like
 -- Set to true if you have a Nerd Font installed and selected in the terminal
 vim.g.have_nerd_font = true
 
@@ -292,17 +294,17 @@ vim.keymap.set('n', '<leader>st', function()
     -- If not in any window, open it in a split
     vim.cmd 'belowright split'
     vim.api.nvim_win_set_buf(0, term_bufnr)
-    vim.cmd 'resize 8'
+    vim.cmd 'resize 10'
     vim.cmd 'startinsert'
   else
     -- If no terminal buffer exists, create one
     vim.cmd 'belowright split'
-    vim.cmd 'resize 8'
+    vim.cmd 'resize 10'
     vim.cmd 'terminal'
     vim.cmd 'startinsert'
   end
 end, { noremap = true, silent = true })
-vim.keymap.set('n', '<leader>rr', function()
+vim.keymap.set('n', '<leader>r', function()
   local ft = vim.bo.filetype
   local file = vim.fn.expand '%:p'
   local cmd = ''
@@ -325,13 +327,45 @@ vim.keymap.set('n', '<leader>rr', function()
     return
   end
 
-  vim.cmd('Dispatch ' .. cmd)
-end, { desc = 'Run current file using dispatch' })
+  local curr_win = vim.api.nvim_get_current_win()
+
+  -- Find existing terminal with running job
+  local term_bufnr = nil
+  local job_id = nil
+  for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.api.nvim_buf_is_loaded(bufnr) and vim.api.nvim_buf_get_option(bufnr, 'buftype') == 'terminal' then
+      local jid = vim.b[bufnr].terminal_job_id
+      if jid and vim.fn.jobwait({ jid }, 0)[1] == -1 then
+        term_bufnr = bufnr
+        job_id = jid
+        break
+      end
+    end
+  end
+
+  if term_bufnr and job_id then
+    -- Terminal exists, just send the command (no window switch)
+    vim.fn.chansend(job_id, cmd .. '\n')
+  else
+    -- Create a new terminal buffer in a split (but keep cursor in original window)
+    vim.cmd 'belowright split'
+    vim.cmd 'resize 8'
+    vim.cmd 'terminal'
+    local new_term_bufnr = vim.api.nvim_get_current_buf()
+    local new_job_id = vim.b[new_term_bufnr].terminal_job_id
+    if new_job_id then
+      vim.fn.chansend(new_job_id, cmd .. '\n')
+    end
+    -- Go back to the original window (before creating terminal)
+    vim.api.nvim_set_current_win(curr_win)
+  end
+end, { noremap = true, silent = true })
 require('lazy').setup({
 
   -- NOTE: Plugins can be added with a link (or for a github repo: 'owner/repo' link).
   'tpope/vim-sleuth', -- Detect tabstop and shiftwidth automatically
   'tpope/vim-fugitive',
+  'tpope/vim-dadbod',
   -- NOTE: Plugins can also be added by using a table,
   -- with the first argument being the link and the following
   -- keys can be used to configure plugin behavior/loading/etc.
@@ -366,7 +400,182 @@ require('lazy').setup({
       -- },
     },
   },
+  {
+    'github/copilot.vim',
+    init = function()
+      -- Prevent Copilot from mapping <Tab>
+      vim.g.copilot_no_tab_map = true
+    end,
+    config = function()
+      -- Toggle Copilot with <leader>cp
+      vim.g.copilot_enabled = true
+      vim.keymap.set('n', '<leader>cp', function()
+        if vim.g.copilot_enabled then
+          vim.cmd 'Copilot disable'
+          vim.g.copilot_enabled = false
+          print 'Copilot disabled'
+        else
+          vim.cmd 'Copilot enable'
+          vim.g.copilot_enabled = true
+          print 'Copilot enabled'
+        end
+      end, { desc = 'Toggle Copilot' })
 
+      -- Accept Copilot suggestion with Ctrl+A
+      vim.keymap.set('i', '<C-a>', 'copilot#Accept("<CR>")', {
+        expr = true,
+        replace_keycodes = false,
+        desc = 'Accept Copilot suggestion',
+      })
+    end,
+  },
+
+  {
+    -- NOTE: Yes, you can install new plugins here!
+    'mfussenegger/nvim-dap',
+    lazy = false,
+    -- NOTE: And you can specify dependencies as well
+    dependencies = {
+      -- Creates a beautiful debugger UI
+      'rcarriga/nvim-dap-ui',
+      lazy = false,
+
+      -- Required dependency for nvim-dap-ui
+      'nvim-neotest/nvim-nio',
+
+      -- Installs the debug adapters for you
+      'williamboman/mason.nvim',
+      'jay-babu/mason-nvim-dap.nvim',
+
+      -- Add your own debuggers here
+      'leoluz/nvim-dap-go',
+    },
+    keys = {
+      -- Basic debugging keymaps, feel free to change to your liking!
+      {
+        '<F5>',
+        function()
+          require('dap').continue()
+        end,
+        desc = 'Debug: Start/Continue',
+      },
+      {
+        '<F1>',
+        function()
+          require('dap').step_into()
+        end,
+        desc = 'Debug: Step Into',
+      },
+      {
+        '<F2>',
+        function()
+          require('dap').step_over()
+        end,
+        desc = 'Debug: Step Over',
+      },
+      {
+        '<F3>',
+        function()
+          require('dap').step_out()
+        end,
+        desc = 'Debug: Step Out',
+      },
+      {
+        '<leader>b',
+        function()
+          require('dap').toggle_breakpoint()
+        end,
+        desc = 'Debug: Toggle Breakpoint',
+      },
+      {
+        '<leader>B',
+        function()
+          require('dap').set_breakpoint(vim.fn.input 'Breakpoint condition: ')
+        end,
+        desc = 'Debug: Set Breakpoint',
+      },
+      -- Toggle to see last session result. Without this, you can't see session output in case of unhandled exception.
+      {
+        '<F7>',
+        function()
+          require('dapui').toggle()
+        end,
+        desc = 'Debug: See last session result.',
+      },
+    },
+    config = function()
+      local dap = require 'dap'
+      local dapui = require 'dapui'
+
+      -- Auto-open and auto-close dapui
+      dap.listeners.after.event_initialized['dapui_config'] = function()
+        dapui.open()
+      end
+      dap.listeners.before.event_terminated['dapui_config'] = function()
+        dapui.close()
+      end
+      dap.listeners.before.event_exited['dapui_config'] = function()
+        dapui.close()
+      end
+
+      require('mason-nvim-dap').setup {
+        -- Makes a best effort to setup the various debuggers with
+        -- reasonable debug configurations
+        automatic_installation = true,
+
+        -- You can provide additional configuration to the handlers,
+        -- see mason-nvim-dap README for more information
+        handlers = {},
+
+        -- You'll need to check that you have the required things installed
+        -- online, please don't ask me how to install them :)
+        ensure_installed = {
+          -- Update this to ensure that you have the debuggers for the langs you want
+          'delve',
+        },
+      }
+
+      -- Dap UI setup
+      -- For more information, see |:help nvim-dap-ui|
+      dapui.setup {
+        -- Set icons to characters that are more likely to work in every terminal.
+        -- Feel free to remove or use ones that you like more! :)
+        -- Don't feel like these are good choices.
+        icons = { expanded = '▾', collapsed = '▸', current_frame = '*' },
+        controls = {
+          icons = {
+            pause = '⏸',
+            play = '▶',
+            step_into = '⏎',
+            step_over = '⏭',
+            step_out = '⏮',
+            step_back = 'b',
+            run_last = '▶▶',
+            terminate = '⏹',
+            disconnect = '⏏',
+          },
+        },
+
+        -- Prevent resize issue by ensuring panels do not resize when toggled
+        window = {
+          position = 'left', -- Change position to "left" or "bottom" if needed
+          width = 40, -- Set a fixed width to avoid resizing issues
+        },
+      }
+
+      -- Install golang specific config
+      require('dap-go').setup {
+        delve = {
+          -- On Windows delve must be run attached or it crashes.
+          -- See https://github.com/leoluz/nvim-dap-go/blob/main/README.md#configuring
+          detached = vim.fn.has 'win32' == 0,
+        },
+      }
+    end,
+  },
+  {
+    'github/copilot.vim',
+  },
   {
     'mbbill/undotree',
     config = function()
@@ -480,7 +689,7 @@ require('lazy').setup({
       vim.keymap.set('n', '<leader>sg', builtin.live_grep, { desc = '[S]earch by [G]rep' })
       vim.keymap.set('n', '<leader>sd', builtin.diagnostics, { desc = '[S]earch [D]iagnostics' })
       vim.keymap.set('n', '<leader>sr', builtin.resume, { desc = '[S]earch [R]esume' })
-      vim.keymap.set('n', '<leader>s.', builtin.oldfiles, { desc = '[S]earch Recent Files ("." for repeat)' })
+      vim.keymap.set('n', '<leader>so', builtin.oldfiles, { desc = '[S]earch Recent Files ("." for repeat)' })
       vim.keymap.set('n', '<leader>sc', builtin.git_commits, { desc = '[G]it [C]ommits' })
       vim.keymap.set('n', '<leader>ss', builtin.git_stash, { desc = '[G]it [S]tash' })
       -- vim.keymap.set('n', '<leader><leader>', builtin.buffers, { desc = '[ ] Find existing buffers' })
@@ -609,7 +818,7 @@ require('lazy').setup({
 
           -- Rename the variable under your cursor.
           --  Most Language Servers support renaming across files, etc.
-          map('<leader>rn', vim.lsp.buf.rename, '[R]e[n]ame')
+          map('<leader>Rn', vim.lsp.buf.rename, '[R]e[n]ame')
 
           -- Execute a code action, usually your cursor needs to be on top of an error
           -- or a suggestion from your LSP for this to activate.
@@ -941,25 +1150,29 @@ require('lazy').setup({
     end,
   },
 
-  { -- You can easily change to a different colorscheme.
-    -- Change the name of the colorscheme plugin below, and then
-    -- change the command in the config to whatever the name of that colorscheme is.
-    --
-    -- If you want to see what colorschemes are already installed, you can use `:Telescope colorscheme`.
+  {
     'folke/tokyonight.nvim',
-    priority = 1000, -- Make sure to load this before all the other start plugins.
+    priority = 1000,
     config = function()
-      ---@diagnostic disable-next-line: missing-fields
       require('tokyonight').setup {
+        transparent = true,
         styles = {
-          comments = { italic = false }, -- Disable italics in comments
+          comments = { italic = false },
         },
       }
 
-      -- Load the colorscheme here.
-      -- Like many other themes, this one has different styles, and you could load
-      -- any other, such as 'tokyonight-storm', 'tokyonight-moon', or 'tokyonight-day'.
+      -- Apply colorscheme
       vim.cmd.colorscheme 'tokyonight-night'
+
+      --   -- Transparent Neo-tree sidebar
+      --   vim.cmd [[
+      --   highlight NeoTreeNormal guibg=NONE ctermbg=NONE
+      --   highlight NeoTreeNormalNC guibg=NONE ctermbg=NONE
+      -- ]]
+      --
+      --   -- Transparent current line
+      --   vim.api.nvim_set_hl(0, 'CursorLine', { bg = 'NONE', ctermbg = 'NONE' })
+      --   vim.api.nvim_set_hl(0, 'CursorLineNr', { bg = 'NONE', ctermbg = 'NONE' }) -- optional
     end,
   },
 
@@ -1102,4 +1315,3 @@ require('lazy').setup({
 })
 
 -- The line beneath this is called `modeline`. See `:help modeline`
--- vim: ts=2 sts=2 sw=2 et
